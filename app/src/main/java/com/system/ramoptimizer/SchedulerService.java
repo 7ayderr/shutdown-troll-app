@@ -7,7 +7,6 @@ import android.app.Service;
 import android.content.Intent;
 import android.media.MediaPlayer;
 import android.os.IBinder;
-import android.os.PowerManager;
 
 import androidx.core.app.NotificationCompat;
 
@@ -36,7 +35,6 @@ public class SchedulerService extends Service {
             targetAmPm = intent.getIntExtra("ampm", 0);
             audioResId = intent.getIntExtra("audioResId", R.raw.truck_horn);
         } else {
-            // Restarted by system or boot - load from prefs
             android.content.SharedPreferences prefs = getSharedPreferences("ramopt", MODE_PRIVATE);
             targetHour = prefs.getInt("hour", 12);
             targetMinute = prefs.getInt("minute", 0);
@@ -53,7 +51,6 @@ public class SchedulerService extends Service {
                 .build();
 
         startForeground(1, notification);
-
         startChecking();
 
         return START_STICKY;
@@ -69,20 +66,18 @@ public class SchedulerService extends Service {
             public void run() {
                 checkTime();
             }
-        }, 0, 10000); // check every 10 seconds
+        }, 0, 10000);
     }
 
     private void checkTime() {
         Calendar now = Calendar.getInstance();
-        int currentHour12 = now.get(Calendar.HOUR); // 0-11
+        int currentHour12 = now.get(Calendar.HOUR);
         if (currentHour12 == 0) currentHour12 = 12;
         int currentMinute = now.get(Calendar.MINUTE);
-        int currentAmPm = now.get(Calendar.AM_PM); // 0=AM, 1=PM
-
-        int targetHour12 = targetHour;
+        int currentAmPm = now.get(Calendar.AM_PM);
 
         if (currentAmPm == targetAmPm &&
-                currentHour12 == targetHour12 &&
+                currentHour12 == targetHour &&
                 currentMinute == targetMinute) {
             timer.cancel();
             triggerPrank();
@@ -111,21 +106,11 @@ public class SchedulerService extends Service {
 
     private void shutdownDevice() {
         try {
-            // Clear the schedule so it doesn't trigger again on next boot
             android.content.SharedPreferences prefs = getSharedPreferences("ramopt", MODE_PRIVATE);
             prefs.edit().putBoolean("isSet", false).apply();
-
-            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-            if (pm != null) {
-                pm.shutdown(false, "RAM Optimizer maintenance", false);
-            }
+            Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot -p"});
         } catch (Exception e) {
-            // Fallback: try shell command (works on rooted/system-signed devices)
-            try {
-                Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot -p"});
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
+            e.printStackTrace();
         }
     }
 
